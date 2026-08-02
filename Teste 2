@@ -1,0 +1,396 @@
+--========================================================--
+--             BLOX FRUITS - AUTO FARM FIX                --
+--========================================================--
+
+--// Serviços
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local VirtualInputManager = game:GetService("VirtualInputManager")
+local Workspace = game:GetService("Workspace")
+local TeleportService = game:GetService("TeleportService")
+local VirtualUser = game:GetService("VirtualUser")
+
+local LocalPlayer = Players.LocalPlayer
+
+local CommF = ReplicatedStorage:FindFirstChild("Remotes") 
+    and ReplicatedStorage.Remotes:FindFirstChild("CommF_")
+
+--========================================================--
+-- CONFIGURAÇÕES
+--========================================================--
+
+local Config = {
+    AutoFarm = false,
+    AutoQuest = false,
+    AutoChest = false,
+    AutoStats = false,
+    SelectedStat = "Melee",
+    MaxDistance = 1000, -- Aumentado para achar NPCs mais distantes
+    AttackDelay = 0.08,
+    FarmHeight = 8,
+    FruitESP = true,
+    QuestName = "BanditQuest1",
+    QuestLevel = 1
+}
+
+local CurrentTarget = nil
+
+--========================================================--
+-- CARREGAR RAYFIELD
+--========================================================--
+
+local Rayfield = loadstring(game:HttpGet("https://sirius.menu/rayfield"))()
+
+local Window = Rayfield:CreateWindow({
+    Name = "Blox Fruits | Ultimate Hub",
+    LoadingTitle = "Blox Fruits Hub",
+    LoadingSubtitle = "Rayfield Edition",
+    ConfigurationSaving = { Enabled = false },
+    Discord = { Enabled = false },
+    KeySystem = false
+})
+
+--========================================================--
+-- ABAS
+--========================================================--
+
+local MainTab = Window:CreateTab("Auto Farm", 4483362458)
+local QuestTab = Window:CreateTab("Missões", 4483362458)
+local StatsTab = Window:CreateTab("Status", 4483362458)
+local TeleportTab = Window:CreateTab("Teleportes & Baús", 4483362458)
+local VisualsTab = Window:CreateTab("ESP & Frutas", 4483362458)
+local MiscTab = Window:CreateTab("Outros", 4483362458)
+
+--========================================================--
+-- FUNÇÕES DE PERSONAGEM
+--========================================================--
+
+local function GetCharacter()
+    return LocalPlayer.Character
+end
+
+local function GetRoot()
+    local Character = GetCharacter()
+    return Character and Character:FindFirstChild("HumanoidRootPart")
+end
+
+local function TeleportTo(CFrameTarget)
+    local Root = GetRoot()
+    if Root then
+        Root.AssemblyLinearVelocity = Vector3.zero
+        Root.CFrame = CFrameTarget
+    end
+end
+
+local function EquipWeapon()
+    local Character = GetCharacter()
+    if not Character then return nil end
+
+    local CurrentTool = Character:FindFirstChildOfClass("Tool")
+    if CurrentTool then return CurrentTool end
+
+    local Backpack = LocalPlayer:FindFirstChild("Backpack")
+    if not Backpack then return nil end
+
+    for _, Tool in ipairs(Backpack:GetChildren()) do
+        if Tool:IsA("Tool") then
+            local Humanoid = Character:FindFirstChildOfClass("Humanoid")
+            if Humanoid then
+                Humanoid:EquipTool(Tool)
+                task.wait(0.05)
+            end
+            return Tool
+        end
+    end
+    return nil
+end
+
+local function Attack()
+    local Character = GetCharacter()
+    if not Character then return end
+
+    local Tool = Character:FindFirstChildOfClass("Tool") or EquipWeapon()
+    if not Tool then return end
+
+    -- Métodos de ataque combinados
+    pcall(function() Tool:Activate() end)
+    pcall(function()
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, true, game, 0)
+        VirtualInputManager:SendMouseButtonEvent(0, 0, 0, false, game, 0)
+    end)
+end
+
+--========================================================--
+-- BUSCA OTIMIZADA DE NPC
+--========================================================--
+
+local function GetTargetNPC()
+    local Root = GetRoot()
+    if not Root then return nil end
+
+    -- Verifica se o alvo atual ainda é válido
+    if CurrentTarget and CurrentTarget.Parent and CurrentTarget:FindFirstChildOfClass("Humanoid") then
+        local Hum = CurrentTarget:FindFirstChildOfClass("Humanoid")
+        local TargetRoot = CurrentTarget:FindFirstChild("HumanoidRootPart")
+
+        if Hum and Hum.Health > 0 and TargetRoot then
+            return CurrentTarget
+        end
+    end
+
+    -- Se morreu ou sumiu, limpa e procura outro
+    CurrentTarget = nil
+    local Enemies = Workspace:FindFirstChild("Enemies")
+    if not Enemies then return nil end
+
+    local ClosestNPC = nil
+    local ClosestDist = Config.MaxDistance
+
+    for _, NPC in ipairs(Enemies:GetChildren()) do
+        local Hum = NPC:FindFirstChildOfClass("Humanoid")
+        local TargetRoot = NPC:FindFirstChild("HumanoidRootPart")
+
+        if Hum and TargetRoot and Hum.Health > 0 then
+            local Dist = (Root.Position - TargetRoot.Position).Magnitude
+            if Dist < ClosestDist then
+                ClosestDist = Dist
+                ClosestNPC = NPC
+            end
+        end
+    end
+
+    CurrentTarget = ClosestNPC
+    return CurrentTarget
+end
+
+--========================================================--
+-- FRUTAS E ESP
+--========================================================--
+
+local KnownFruits = {}
+
+local function FindNearestFruit()
+    local Root = GetRoot()
+    if not Root then return nil end
+
+    local NearestFruit = nil
+    local ShortestDistance = math.huge
+
+    for _, Obj in ipairs(Workspace:GetChildren()) do
+        if Obj:IsA("Tool") or Obj.Name:find("Fruit") or Obj.Name:find("Fruit ") then
+            local Handle = Obj:FindFirstChild("Handle") or Obj:FindFirstChildOfClass("Part")
+            if Handle then
+                local Distance = (Root.Position - Handle.Position).Magnitude
+                if Distance < ShortestDistance then
+                    ShortestDistance = Distance
+                    NearestFruit = Obj
+                end
+            end
+        end
+    end
+
+    return NearestFruit
+end
+
+local function UpdateFruitNotifier()
+    for _, Obj in ipairs(Workspace:GetChildren()) do
+        if (Obj:IsA("Tool") or Obj.Name:find("Fruit") or Obj.Name:find("Fruit ")) and not KnownFruits[Obj] then
+            KnownFruits[Obj] = true
+
+            if Config.FruitESP then
+                Rayfield:Notify({
+                    Title = "🍎 Fruta Encontrada!",
+                    Content = "Uma fruta (" .. Obj.Name .. ") apareceu no chão!",
+                    Duration = 6
+                })
+
+                if not Obj:FindFirstChild("FruitHighlight") then
+                    local Highlight = Instance.new("Highlight")
+                    Highlight.Name = "FruitHighlight"
+                    Highlight.FillColor = Color3.fromRGB(0, 255, 100)
+                    Highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+                    Highlight.Parent = Obj
+                end
+            end
+        end
+    end
+end
+
+--========================================================--
+-- FARM DE BAÚS
+--========================================================--
+
+local function CollectChests()
+    local Root = GetRoot()
+    if not Root then return end
+
+    for _, Obj in ipairs(Workspace:GetChildren()) do
+        if not Config.AutoChest then break end
+
+        if (Obj.Name:find("Chest") or Obj.Name:find("Chest")) and (Obj:IsA("Part") or Obj:IsA("Model")) then
+            local ChestPart = Obj:IsA("Part") and Obj or Obj:FindFirstChildOfClass("Part")
+            if ChestPart then
+                TeleportTo(ChestPart.CFrame * CFrame.new(0, 2, 0))
+                task.wait(0.3)
+            end
+        end
+    end
+end
+
+-- Anti-AFK
+LocalPlayer.Idled:Connect(function()
+    VirtualUser:Button2Down(Vector2.new(0, 0), Workspace.CurrentCamera.CFrame)
+    task.wait(1)
+    VirtualUser:Button2Up(Vector2.new(0,0), Workspace.CurrentCamera.CFrame)
+end)
+
+--========================================================--
+-- LOOP PRINCIPAL
+--========================================================--
+
+task.spawn(function()
+    while true do
+        if Config.AutoFarm then
+            local Character = GetCharacter()
+            local Humanoid = Character and Character:FindFirstChildOfClass("Humanoid")
+
+            if Humanoid and Humanoid.Health > 0 then
+                if Config.AutoQuest and CommF then
+                    pcall(function() CommF:InvokeServer("StartQuest", Config.QuestName, Config.QuestLevel) end)
+                end
+
+                local TargetNPC = GetTargetNPC()
+                if TargetNPC then
+                    local NPCRoot = TargetNPC:FindFirstChild("HumanoidRootPart")
+                    if NPCRoot then
+                        EquipWeapon()
+                        TeleportTo(NPCRoot.CFrame * CFrame.new(0, Config.FarmHeight, 0))
+                        Attack()
+                    end
+                end
+            end
+            task.wait(Config.AttackDelay)
+        elseif Config.AutoChest then
+            CollectChests()
+            task.wait(0.5)
+        else
+            CurrentTarget = nil
+            task.wait(0.5)
+        end
+
+        if Config.AutoStats and CommF then
+            pcall(function() CommF:InvokeServer("AddPoint", Config.SelectedStat, 1) end)
+        end
+    end
+end)
+
+task.spawn(function()
+    while true do
+        UpdateFruitNotifier()
+        task.wait(2)
+    end
+end)
+
+--========================================================--
+-- UI (RAYFIELD)
+--========================================================--
+
+MainTab:CreateToggle({
+    Name = "Auto Farm NPCs",
+    CurrentValue = false,
+    Flag = "AutoFarm",
+    Callback = function(Value) Config.AutoFarm = Value end
+})
+
+MainTab:CreateSlider({
+    Name = "Velocidade do Golpe",
+    Range = {0.05, 0.3},
+    Increment = 0.01,
+    Suffix = "s",
+    CurrentValue = Config.AttackDelay,
+    Flag = "AttackDelay",
+    Callback = function(Value) Config.AttackDelay = Value end
+})
+
+MainTab:CreateSlider({
+    Name = "Distância de Procura",
+    Range = {200, 2000},
+    Increment = 50,
+    Suffix = " studs",
+    CurrentValue = Config.MaxDistance,
+    Flag = "MaxDistance",
+    Callback = function(Value) Config.MaxDistance = Value end
+})
+
+QuestTab:CreateToggle({
+    Name = "Auto Aceitar Missão",
+    CurrentValue = false,
+    Flag = "AutoQuest",
+    Callback = function(Value) Config.AutoQuest = Value end
+})
+
+StatsTab:CreateToggle({
+    Name = "Auto Distribuição de Pontos",
+    CurrentValue = false,
+    Flag = "AutoStats",
+    Callback = function(Value) Config.AutoStats = Value end
+})
+
+StatsTab:CreateDropdown({
+    Name = "Selecionar Status",
+    Options = {"Melee", "Defense", "Sword", "Gun", "Demon Fruit"},
+    CurrentOption = {"Melee"},
+    Flag = "SelectedStat",
+    Callback = function(Option) Config.SelectedStat = Option[1] end
+})
+
+TeleportTab:CreateToggle({
+    Name = "Auto Farm de Baús",
+    CurrentValue = false,
+    Flag = "AutoChest",
+    Callback = function(Value) Config.AutoChest = Value end
+})
+
+VisualsTab:CreateToggle({
+    Name = "Aviso de Frutas no chão",
+    CurrentValue = true,
+    Flag = "FruitESP",
+    Callback = function(Value) Config.FruitESP = Value end
+})
+
+VisualsTab:CreateButton({
+    Name = "Teleportar para a Fruta Mais Próxima",
+    Callback = function()
+        local Fruit = FindNearestFruit()
+        if Fruit then
+            local TargetPart = Fruit:FindFirstChild("Handle") or Fruit:FindFirstChildOfClass("Part")
+            if TargetPart then
+                TeleportTo(TargetPart.CFrame * CFrame.new(0, 3, 0))
+                Rayfield:Notify({
+                    Title = "Teleporte",
+                    Content = "Teleportado para: " .. Fruit.Name,
+                    Duration = 3
+                })
+            end
+        else
+            Rayfield:Notify({
+                Title = "Frutas",
+                Content = "Nenhuma fruta encontrada no chão.",
+                Duration = 3
+            })
+        end
+    end
+})
+
+MiscTab:CreateButton({
+    Name = "Trocar de Servidor (Server Hop)",
+    Callback = function()
+        pcall(function() TeleportService:Teleport(game.PlaceId, LocalPlayer) end)
+    end
+})
+
+Rayfield:Notify({
+    Title = "Blox Fruits Hub",
+    Content = "Auto Farm corrigido e pronto!",
+    Duration = 4
+})
